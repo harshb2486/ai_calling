@@ -1,0 +1,29 @@
+; SIP Configuration for AI Voice Recruiter
+; Add this to /etc/asterisk/sip.conf
+
+[general]
+context=from-sip
+bindport=5060
+bindaddr=0.0.0.0
+srvlookup=yes
+
+; SIP Trunk Configuration (Replace with your provider details)
+; Example with Exotel:
+[exotel]
+type=peer
+host=sip.exotel.com
+port=5060
+fromuser=YOUR_NUMBER
+username=YOUR_USERNAME
+secret=YOUR_PASSWORD
+context=from-sip
+insecure=port,invite
+disallow=all
+allow=ulaw
+allow=alaw
+
+; Outbound trunk for calling
+[outbound]
+type=peer
+host=YOUR_SIP_PROVIDER_IP
+context=from-sip

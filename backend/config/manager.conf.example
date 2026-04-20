@@ -1,0 +1,14 @@
+; Asterisk Manager Interface (AMI) Configuration
+; Add this to /etc/asterisk/manager.conf
+
+[general]
+enabled = yes
+port = 5038
+bindaddr = 0.0.0.0
+displayconnects = yes
+
+; AMI User for Node.js backend
+[admin]
+secret = YOUR_AMI_PASSWORD
+read = system,call,log,verbose,command,agent,user,config
+write = system,call,log,verbose,command,agent,user,config

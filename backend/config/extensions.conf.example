@@ -1,0 +1,37 @@
+; Dial Plan Configuration
+; Add this to /etc/asterisk/extensions.conf
+
+[from-sip]
+; Answer incoming calls
+exten => s,1,Answer()
+exten => s,n,Wait(1)
+
+; Play welcome message
+exten => s,n,Playback(welcome)
+exten => s,n,Wait(1)
+
+; Forward to IVR or agent
+exten => s,n,Dial(SIP/agent,30)
+
+; If no answer, go to voicemail
+exten => s,n,Voicemail(100@default)
+
+exten => s,n,Hangup()
+
+; Outbound call context (called from Node.js)
+[from-outbound]
+exten => _X.,1,Answer()
+exten => _X.,n,Wait(1)
+exten => _X.,n,Playback(connecting)
+exten => _X.,n,Dial(SIP/${EXTEN}@exotel,30)
+exten => _X.,n,Hangup()
+
+; Auto-dialer context
+[auto-dialer]
+exten => 100,1,Answer()
+exten => 100,n,Wait(1)
+; AI question will be played via playback
+exten => 100,n,Playback(/var/lib/asterisk/sounds/ai-question)
+exten => 100,n,Record(/tmp/candidate-response.gsm,3,10)
+exten => 100,n,Playback(/tmp/candidate-response)
+exten => 100,n,Hangup()
