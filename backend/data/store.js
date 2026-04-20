@@ -5,7 +5,13 @@ let candidates = [
   { id: 4, name: 'James Wilson', phone: '+1 555-0104', email: 'jwilson@email.com', status: 'completed', score: 72, questions: 'How do you handle state management?' },
 ];
 
-let nextId = 5;
+let clients = [
+  { id: 1, name: 'Acme Corp', contactPerson: 'John Doe', phone: '+1 555-1001', email: 'john.doe@acmecorp.com' },
+  { id: 2, name: 'Globex Inc', contactPerson: 'Jane Smith', phone: '+1 555-1002', email: 'jane.smith@globex.com' },
+];
+
+let nextCandidateId = 5;
+let nextClientId = 3;
 
 export function getCandidates() {
   return candidates;
@@ -17,7 +23,7 @@ export function getCandidateById(id) {
 
 export function createCandidate(data) {
   const candidate = {
-    id: nextId++,
+    id: nextCandidateId++,
     ...data,
     status: 'pending',
     score: null,
@@ -39,5 +45,36 @@ export function deleteCandidate(id) {
   const index = candidates.findIndex(c => c.id === parseInt(id));
   if (index === -1) return false;
   candidates.splice(index, 1);
+  return true;
+}
+
+export function getClients() {
+  return clients;
+}
+
+export function getClientById(id) {
+  return clients.find(c => c.id === parseInt(id));
+}
+
+export function createClient(data) {
+  const client = {
+    id: nextClientId++,
+    ...data,
+  };
+  clients.push(client);
+  return client;
+}
+
+export function updateClient(id, data) {
+  const index = clients.findIndex(c => c.id === parseInt(id));
+  if (index === -1) return null;
+  clients[index] = { ...clients[index], ...data };
+  return clients[index];
+}
+
+export function deleteClient(id) {
+  const index = clients.findIndex(c => c.id === parseInt(id));
+  if (index === -1) return false;
+  clients.splice(index, 1);
   return true;
 }

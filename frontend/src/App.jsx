@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { 
   Phone, PhoneOff, User, Users, FileText, 
   Plus, Search, Clock, CheckCircle, XCircle,
@@ -15,86 +15,83 @@ const initialCandidates = [
   { id: 4, name: 'James Wilson', phone: '+1 555-0104', email: 'jwilson@email.com', status: 'completed', score: 72, questions: 'How do you handle state management?' },
 ]
 
+const initialClients = [
+  { id: 1, name: 'Acme Corp', contactPerson: 'John Doe', phone: '+1 555-1001', email: 'john.doe@acmecorp.com' },
+  { id: 2, name: 'Globex Inc', contactPerson: 'Jane Smith', phone: '+1 555-1002', email: 'jane.smith@globex.com' },
+]
+
+const DEFAULT_API_KEYS = {
+  asteriskHost: 'localhost',
+  asteriskPort: '5038',
+  asteriskUser: 'admin',
+  asteriskSecret: '',
+  asteriskContext: 'from-sip',
+  asteriskOutboundChannel: 'SIP/trunk',
+  openaiKey: ''
+}
+
 function App() {
-  const [candidates, setCandidates] = useState([])
+  const [candidates, setCandidates] = useState(() => {
+    try {
+      const saved = localStorage.getItem('candidates')
+      if (saved) return JSON.parse(saved)
+      localStorage.setItem('candidates', JSON.stringify(initialCandidates))
+      return initialCandidates
+    } catch {
+      return initialCandidates
+    }
+  })
   const [selectedCandidate, setSelectedCandidate] = useState(null)
+  const [clients, setClients] = useState(() => {
+    try {
+      const saved = localStorage.getItem('clients')
+      if (saved) return JSON.parse(saved)
+      localStorage.setItem('clients', JSON.stringify(initialClients))
+      return initialClients
+    } catch {
+      return initialClients
+    }
+  })
+  const [selectedClient, setSelectedClient] = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [isCalling, setIsCalling] = useState(false)
   const [callDuration, setCallDuration] = useState(0)
   const [transcript, setTranscript] = useState([])
   const [newCandidate, setNewCandidate] = useState({ name: '', phone: '', email: '', questions: '' })
+  const [newClient, setNewClient] = useState({ name: '', contactPerson: '', phone: '', email: '' })
   const [activeTab, setActiveTab] = useState('dashboard')
   const [showSettings, setShowSettings] = useState(false)
-  const [apiKeys, setApiKeys] = useState({
-    asteriskHost: 'localhost',
-    asteriskPort: '5038',
-    asteriskUser: 'admin',
-    asteriskSecret: '',
-    asteriskContext: 'from-sip',
-    asteriskOutboundChannel: 'SIP/trunk',
-    openaiKey: ''
-  })
-  const [loading, setLoading] = useState(false)
-  const [useLocal, setUseLocal] = useState(false)
-
-  useEffect(() => {
-    loadCandidates()
-    loadSettings()
-  }, [])
-
-  const loadCandidates = () => {
-    const saved = localStorage.getItem('candidates')
-    if (saved) {
-      setCandidates(JSON.parse(saved))
-      setUseLocal(true)
-    } else {
-      setCandidates(initialCandidates)
-      localStorage.setItem('candidates', JSON.stringify(initialCandidates))
+  const [apiKeys, setApiKeys] = useState(() => {
+    try {
+      const saved = localStorage.getItem('apiKeys')
+      return saved ? JSON.parse(saved) : DEFAULT_API_KEYS
+    } catch {
+      return DEFAULT_API_KEYS
     }
-  }
+  })
+  const timerRef = useRef(null)
 
   const saveCandidates = (data) => {
     localStorage.setItem('candidates', JSON.stringify(data))
     setCandidates(data)
   }
 
-  const loadSettings = () => {
-    const saved = localStorage.getItem('apiKeys')
-    if (saved) {
-      setApiKeys(JSON.parse(saved))
-    }
+  const saveClients = (data) => {
+    localStorage.setItem('clients', JSON.stringify(data))
+    setClients(data)
   }
 
-  const fetchCandidates = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/candidates`)
-      if (res.ok) {
-        const data = await res.json()
-        setCandidates(data)
-        setUseLocal(false)
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
       }
-    } catch (err) {
-      console.log('Using local storage')
-      loadCandidates()
-    } finally {
-      setLoading(false)
     }
-  }
-
-  const fetchSettings = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/settings`)
-      if (res.ok) {
-        const data = await res.json()
-        setApiKeys(data)
-      }
-    } catch (err) {
-      loadSettings()
-    }
-  }
+  }, [])
 
   const stats = {
     total: candidates.length,
+    totalClients: clients.length,
     completed: candidates.filter(c => c.status === 'completed').length,
     pending: candidates.filter(c => c.status === 'pending').length,
     inProgress: candidates.filter(c => c.status === 'in-progress').length,
@@ -105,8 +102,9 @@ function App() {
     setIsCalling(true)
     setCallDuration(0)
     setTranscript([{ speaker: 'AI', text: 'Connecting call...' }])
-    
-    const timer = setInterval(() => {
+
+    if (timerRef.current) clearInterval(timerRef.current)
+    timerRef.current = setInterval(() => {
       setCallDuration(prev => prev + 1)
     }, 1000)
 
@@ -116,7 +114,7 @@ function App() {
       if (data.candidate?.transcript) {
         setTranscript(data.candidate.transcript)
       }
-    } catch (err) {
+    } catch {
       setTranscript([{ 
         speaker: 'AI', 
         text: `Hello ${candidate.name}, ${candidate.questions || 'Tell me about yourself and your experience.'}` 
@@ -126,12 +124,16 @@ function App() {
 
   const endCall = async (candidate) => {
     setIsCalling(false)
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
     const score = Math.floor(Math.random() * 30) + 70
     setTranscript(prev => [...prev, { speaker: 'AI', text: 'Thank you for your time. We will be in touch soon. Goodbye!' }])
     
     try {
       await fetch(`${API_BASE}/calls/end/${candidate.id}`, { method: 'POST' })
-    } catch (err) {
+    } catch {
       const updated = candidates.map(c => 
         c.id === candidate.id ? { ...c, status: 'completed', score } : c
       )
@@ -164,7 +166,7 @@ function App() {
           const added = await res.json()
           setCandidates([added, ...candidates])
         }
-      } catch (err) {
+      } catch {
         const updated = [candidate, ...candidates]
         saveCandidates(updated)
       }
@@ -179,12 +181,53 @@ function App() {
     try {
       await fetch(`${API_BASE}/candidates/${id}`, { method: 'DELETE' })
       setCandidates(candidates.filter(c => c.id !== id))
-    } catch (err) {
+    } catch {
       const updated = candidates.filter(c => c.id !== id)
       saveCandidates(updated)
     }
     if (selectedCandidate && selectedCandidate.id === id) {
       setSelectedCandidate(null)
+    }
+  }
+
+  const addClient = async () => {
+    if (newClient.name && newClient.contactPerson && newClient.phone) {
+      const client = {
+        id: Date.now(),
+        ...newClient,
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/clients`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newClient)
+        })
+        if (res.ok) {
+          const added = await res.json()
+          setClients([added, ...clients])
+        }
+      } catch {
+        const updated = [client, ...clients]
+        saveClients(updated)
+      }
+
+      setNewClient({ name: '', contactPerson: '', phone: '', email: '' })
+      setShowAddModal(false)
+    }
+  }
+
+  const deleteClient = async (id, e) => {
+    e.stopPropagation()
+    try {
+      await fetch(`${API_BASE}/clients/${id}`, { method: 'DELETE' })
+      setClients(clients.filter(c => c.id !== id))
+    } catch {
+      const updated = clients.filter(c => c.id !== id)
+      saveClients(updated)
+    }
+    if (selectedClient && selectedClient.id === id) {
+      setSelectedClient(null)
     }
   }
 
@@ -195,7 +238,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(apiKeys)
       })
-    } catch (err) {
+    } catch {
       localStorage.setItem('apiKeys', JSON.stringify(apiKeys))
     }
     setShowSettings(false)
@@ -208,17 +251,15 @@ function App() {
   }
 
   const getFilteredCandidates = () => {
-    switch (activeTab) {
-      case 'calls':
-        return candidates.filter(c => c.status === 'in-progress')
-      case 'reports':
-        return candidates.filter(c => c.status === 'completed')
-      default:
-        return candidates
-    }
+    if (activeTab === 'calls') return candidates.filter(c => c.status === 'in-progress')
+    if (activeTab === 'reports') return candidates.filter(c => c.status === 'completed')
+    if (activeTab === 'candidates') return candidates
+    return []
   }
 
   const filteredCandidates = getFilteredCandidates()
+  const filteredClients = clients
+  const isClientsTab = activeTab === 'clients'
 
   return (
     <div className="app">
@@ -250,12 +291,20 @@ function App() {
           {[
             { id: 'dashboard', icon: Activity, label: 'Dashboard' },
             { id: 'candidates', icon: Users, label: 'Candidates' },
+            { id: 'clients', icon: Users, label: 'Clients' },
             { id: 'calls', icon: Phone, label: 'Active Calls' },
             { id: 'reports', icon: FileText, label: 'Reports' },
           ].map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id)
+                  if (tab.id === 'clients') {
+                    setSelectedCandidate(null)
+                  } else {
+                    setSelectedClient(null)
+                  }
+                }}
               className={`nav-btn ${activeTab === tab.id ? 'active' : ''}`}
             >
               <tab.icon style={{ width: '1rem', height: '1rem' }} />
@@ -271,9 +320,10 @@ function App() {
             <div className="stats-grid">
               {[
                 { label: 'Total Candidates', value: stats.total, icon: Users, color: 'purple' },
+                { label: 'Total Clients', value: stats.totalClients, icon: Users, color: 'blue' },
                 { label: 'Completed', value: stats.completed, icon: CheckCircle, color: 'green' },
                 { label: 'In Progress', value: stats.inProgress, icon: Clock, color: 'yellow' },
-                { label: 'Pending', value: stats.pending, icon: Phone, color: 'blue' },
+                { label: 'Pending', value: stats.pending, icon: Phone, color: 'purple' },
               ].map((stat, i) => (
                 <div key={i} className="stat-card">
                   <div className="stat-header">
@@ -318,185 +368,242 @@ function App() {
               <div className="card-header">
                 <h2 className="card-title">
                   {activeTab === 'candidates' && 'All Candidates'}
+                  {activeTab === 'clients' && 'All Clients'}
                   {activeTab === 'calls' && 'Active Calls'}
                   {activeTab === 'reports' && 'Completed Reports'}
                 </h2>
-                <button 
-                onClick={() => setShowAddModal(true)}
-                className="add-btn"
-              >
-                <Plus />
-                Add Candidate
-              </button>
-            </div>
-            
-            <div className="card-body">
-              <div className="search-box">
-                <Search />
-                <input 
-                  type="text" 
-                  placeholder="Search candidates..." 
-                  className="search-input"
-                />
-              </div>
-
-              <div className="candidate-list">
-                {filteredCandidates.map(candidate => (
-                  <div 
-                    key={candidate.id}
-                    className="candidate-item"
-                    onClick={() => setSelectedCandidate(candidate)}
+                {(activeTab === 'candidates' || activeTab === 'clients') && (
+                  <button
+                    onClick={() => setShowAddModal(true)}
+                    className="add-btn"
                   >
-                    <div className="candidate-info">
-                      <div className="candidate-avatar">
-                        {candidate.name.split(' ').map(n => n[0]).join('')}
-                      </div>
-                      <div className="candidate-details">
-                        <h3>{candidate.name}</h3>
-                        <p>{candidate.email}</p>
-                      </div>
-                    </div>
-                    <div className="candidate-actions">
-                      <span className={`status-badge ${candidate.status}`}>
-                        {candidate.status === 'completed' ? 'Completed' :
-                         candidate.status === 'in-progress' ? 'In Progress' : 'Pending'}
-                      </span>
-                      {candidate.score && (
-                        <div className="score">
-                          <p className="score-value">{candidate.score}</p>
-                          <p className="score-label">Score</p>
-                        </div>
-                      )}
-                      <button
-                        onClick={(e) => deleteCandidate(candidate.id, e)}
-                        className="delete-btn"
-                        title="Delete candidate"
-                      >
-                        <Trash2 style={{ width: '1rem', height: '1rem' }} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (candidate.status !== 'completed') {
-                            setCandidates(prev => prev.map(c => 
-                              c.id === candidate.id ? { ...c, status: 'in-progress' } : c
-                            ))
-                            startCall(candidate)
-                          }
-                        }}
-                        disabled={candidate.status === 'completed'}
-                        className="call-btn"
-                      >
-                        <Phone style={{ width: '1rem', height: '1rem' }} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                    <Plus />
+                    {activeTab === 'candidates' ? 'Add Candidate' : 'Add Client'}
+                  </button>
+                )}
               </div>
-            </div>
-          </div>
 
-          <div className="card">
-            {isCalling ? (
-              <div className="call-interface">
-                <div className="call-info">
-                  <div className="call-avatar">
-                    <div className="call-avatar-inner">
-                      <Bot />
-                    </div>
-                  </div>
-                  <h3>AI Calling...</h3>
-                  <p>{selectedCandidate?.name}</p>
-                  <p className="call-timer">{formatDuration(callDuration)}</p>
+              <div className="card-body">
+                <div className="search-box">
+                  <Search />
+                  <input
+                    type="text"
+                    placeholder={activeTab === 'clients' ? 'Search clients...' : 'Search candidates...'}
+                    className="search-input"
+                  />
                 </div>
 
-                <div className="waveform">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="waveform-bar" />
-                  ))}
-                </div>
-
-                <div className="transcript">
-                  <h4 className="transcript-title">Live Transcript</h4>
-                  <div className="transcript-messages">
-                    {transcript.map((msg, i) => (
-                      <div key={i} className={`transcript-msg ${msg.speaker === 'AI' ? 'ai' : 'candidate'}`}>
-                        <div className={`msg-bubble ${msg.speaker === 'AI' ? 'ai' : 'candidate'}`}>
-                          <span className="msg-speaker">{msg.speaker}</span>
-                          {msg.text}
+                <div className="candidate-list">
+                  {isClientsTab
+                    ? filteredClients.map(client => (
+                      <div
+                        key={client.id}
+                        className="candidate-item"
+                        onClick={() => setSelectedClient(client)}
+                      >
+                        <div className="candidate-info">
+                          <div className="candidate-avatar">
+                            {client.name.split(' ').map(n => n[0]).join('')}
+                          </div>
+                          <div className="candidate-details">
+                            <h3>{client.name}</h3>
+                            <p>{client.contactPerson} • {client.email}</p>
+                          </div>
+                        </div>
+                        <div className="candidate-actions">
+                          <span className="status-badge pending">Client</span>
+                          <button
+                            onClick={(e) => deleteClient(client.id, e)}
+                            className="delete-btn"
+                            title="Delete client"
+                          >
+                            <Trash2 style={{ width: '1rem', height: '1rem' }} />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                    : filteredCandidates.map(candidate => (
+                      <div
+                        key={candidate.id}
+                        className="candidate-item"
+                        onClick={() => setSelectedCandidate(candidate)}
+                      >
+                        <div className="candidate-info">
+                          <div className="candidate-avatar">
+                            {candidate.name.split(' ').map(n => n[0]).join('')}
+                          </div>
+                          <div className="candidate-details">
+                            <h3>{candidate.name}</h3>
+                            <p>{candidate.email}</p>
+                          </div>
+                        </div>
+                        <div className="candidate-actions">
+                          <span className={`status-badge ${candidate.status}`}>
+                            {candidate.status === 'completed' ? 'Completed' :
+                             candidate.status === 'in-progress' ? 'In Progress' : 'Pending'}
+                          </span>
+                          {candidate.score && (
+                            <div className="score">
+                              <p className="score-value">{candidate.score}</p>
+                              <p className="score-label">Score</p>
+                            </div>
+                          )}
+                          <button
+                            onClick={(e) => deleteCandidate(candidate.id, e)}
+                            className="delete-btn"
+                            title="Delete candidate"
+                          >
+                            <Trash2 style={{ width: '1rem', height: '1rem' }} />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (candidate.status !== 'completed') {
+                                setCandidates(prev => prev.map(c =>
+                                  c.id === candidate.id ? { ...c, status: 'in-progress' } : c
+                                ))
+                                startCall(candidate)
+                              }
+                            }}
+                            disabled={candidate.status === 'completed'}
+                            className="call-btn"
+                          >
+                            <Phone style={{ width: '1rem', height: '1rem' }} />
+                          </button>
                         </div>
                       </div>
                     ))}
-                  </div>
                 </div>
-
-                <button
-                  onClick={() => endCall(selectedCandidate)}
-                  className="btn btn-danger"
-                >
-                  <PhoneOff style={{ width: '1.25rem', height: '1.25rem' }} />
-                  End Call
-                </button>
               </div>
-            ) : selectedCandidate ? (
-              <div className="call-interface">
-                <div className="call-info">
-                  <div className="call-avatar">
-                    <div className="call-avatar-inner">
-                      <span style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'white' }}>
-                        {selectedCandidate.name.split(' ').map(n => n[0]).join('')}
-                      </span>
+            </div>
+
+            <div className="card">
+              {isClientsTab ? (
+                selectedClient ? (
+                  <div className="call-interface">
+                    <div className="call-info">
+                      <div className="call-avatar">
+                        <div className="call-avatar-inner">
+                          <span style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'white' }}>
+                            {selectedClient.name.split(' ').map(n => n[0]).join('')}
+                          </span>
+                        </div>
+                      </div>
+                      <h3>{selectedClient.name}</h3>
+                      <p>Contact: {selectedClient.contactPerson}</p>
+                      <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>{selectedClient.email}</p>
+                      <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>{selectedClient.phone}</p>
                     </div>
                   </div>
-                  <h3>{selectedCandidate.name}</h3>
-                  <p>{selectedCandidate.email}</p>
-                  <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>{selectedCandidate.phone}</p>
-                </div>
-
-                <div>
-                  <div className="questions-card">
-                    <h4 className="questions-title">Questions to Ask</h4>
-                    <p className="questions-text">{selectedCandidate.questions || 'No specific questions set'}</p>
+                ) : (
+                  <div className="empty-state">
+                    <div className="empty-icon">
+                      <Users />
+                    </div>
+                    <h3 className="empty-title">No Client Selected</h3>
+                    <p className="empty-text">Select a client from the list to view details</p>
                   </div>
-
-                  {selectedCandidate.score && (
-                    <div className="score-card">
-                      <h4 className="questions-title">AI Evaluation</h4>
-                      <div className="score-header">
-                        <span>Score</span>
-                        <span className={`score-value-large ${
-                          selectedCandidate.score >= 80 ? 'high' :
-                          selectedCandidate.score >= 60 ? 'medium' : 'low'
-                        }`}>{selectedCandidate.score}/100</span>
-                      </div>
-                      <div className="score-bar">
-                        <div 
-                          className="score-bar-fill"
-                          style={{ width: `${selectedCandidate.score}%` }}
-                        />
+                )
+              ) : isCalling ? (
+                <div className="call-interface">
+                  <div className="call-info">
+                    <div className="call-avatar">
+                      <div className="call-avatar-inner">
+                        <Bot />
                       </div>
                     </div>
-                  )}
+                    <h3>AI Calling...</h3>
+                    <p>{selectedCandidate?.name}</p>
+                    <p className="call-timer">{formatDuration(callDuration)}</p>
+                  </div>
+
+                  <div className="waveform">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className="waveform-bar" />
+                    ))}
+                  </div>
+
+                  <div className="transcript">
+                    <h4 className="transcript-title">Live Transcript</h4>
+                    <div className="transcript-messages">
+                      {transcript.map((msg, i) => (
+                        <div key={i} className={`transcript-msg ${msg.speaker === 'AI' ? 'ai' : 'candidate'}`}>
+                          <div className={`msg-bubble ${msg.speaker === 'AI' ? 'ai' : 'candidate'}`}>
+                            <span className="msg-speaker">{msg.speaker}</span>
+                            {msg.text}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
 
                   <button
-                    onClick={() => startCall(selectedCandidate)}
-                    disabled={selectedCandidate.status === 'completed'}
-                    className="btn btn-primary"
+                    onClick={() => endCall(selectedCandidate)}
+                    className="btn btn-danger"
                   >
-                    <Phone style={{ width: '1.25rem', height: '1.25rem' }} />
-                    {selectedCandidate.status === 'completed' ? 'Call Completed' : 'Start Interview'}
+                    <PhoneOff style={{ width: '1.25rem', height: '1.25rem' }} />
+                    End Call
                   </button>
                 </div>
-              </div>
-            ) : (
-              <div className="empty-state">
-                <div className="empty-icon">
-                  <User />
+              ) : selectedCandidate ? (
+                <div className="call-interface">
+                  <div className="call-info">
+                    <div className="call-avatar">
+                      <div className="call-avatar-inner">
+                        <span style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'white' }}>
+                          {selectedCandidate.name.split(' ').map(n => n[0]).join('')}
+                        </span>
+                      </div>
+                    </div>
+                    <h3>{selectedCandidate.name}</h3>
+                    <p>{selectedCandidate.email}</p>
+                    <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>{selectedCandidate.phone}</p>
+                  </div>
+
+                  <div>
+                    <div className="questions-card">
+                      <h4 className="questions-title">Questions to Ask</h4>
+                      <p className="questions-text">{selectedCandidate.questions || 'No specific questions set'}</p>
+                    </div>
+
+                    {selectedCandidate.score && (
+                      <div className="score-card">
+                        <h4 className="questions-title">AI Evaluation</h4>
+                        <div className="score-header">
+                          <span>Score</span>
+                          <span className={`score-value-large ${
+                            selectedCandidate.score >= 80 ? 'high' :
+                            selectedCandidate.score >= 60 ? 'medium' : 'low'
+                          }`}>{selectedCandidate.score}/100</span>
+                        </div>
+                        <div className="score-bar">
+                          <div
+                            className="score-bar-fill"
+                            style={{ width: `${selectedCandidate.score}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => startCall(selectedCandidate)}
+                      disabled={selectedCandidate.status === 'completed'}
+                      className="btn btn-primary"
+                    >
+                      <Phone style={{ width: '1.25rem', height: '1.25rem' }} />
+                      {selectedCandidate.status === 'completed' ? 'Call Completed' : 'Start Interview'}
+                    </button>
+                  </div>
                 </div>
-                <h3 className="empty-title">No Candidate Selected</h3>
-                <p className="empty-text">Select a candidate from the list to view details or start a call</p>
-              </div>
-            )}
+              ) : (
+                <div className="empty-state">
+                  <div className="empty-icon">
+                    <User />
+                  </div>
+                  <h3 className="empty-title">No Candidate Selected</h3>
+                  <p className="empty-text">Select a candidate from the list to view details or start a call</p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -506,8 +613,8 @@ function App() {
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
-              <h2 className="modal-title">Add New Candidate</h2>
-              <button 
+              <h2 className="modal-title">{isClientsTab ? 'Add New Client' : 'Add New Candidate'}</h2>
+              <button
                 onClick={() => setShowAddModal(false)}
                 className="modal-close"
               >
@@ -515,55 +622,108 @@ function App() {
               </button>
             </div>
 
-            <div>
-              <div className="form-group">
-                <label className="form-label">Full Name *</label>
-                <input 
-                  type="text"
-                  value={newCandidate.name}
-                  onChange={(e) => setNewCandidate({ ...newCandidate, name: e.target.value })}
-                  className="form-input"
-                  placeholder="John Doe"
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Phone Number *</label>
-                <input 
-                  type="tel"
-                  value={newCandidate.phone}
-                  onChange={(e) => setNewCandidate({ ...newCandidate, phone: e.target.value })}
-                  className="form-input"
-                  placeholder="+1 555-0100"
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Email Address</label>
-                <input 
-                  type="email"
-                  value={newCandidate.email}
-                  onChange={(e) => setNewCandidate({ ...newCandidate, email: e.target.value })}
-                  className="form-input"
-                  placeholder="john@email.com"
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Interview Questions</label>
-                <textarea 
-                  value={newCandidate.questions}
-                  onChange={(e) => setNewCandidate({ ...newCandidate, questions: e.target.value })}
-                  className="form-input"
-                  placeholder="Tell me about your experience with..."
-                />
-              </div>
+            {isClientsTab ? (
+              <div>
+                <div className="form-group">
+                  <label className="form-label">Client Name *</label>
+                  <input
+                    type="text"
+                    value={newClient.name}
+                    onChange={(e) => setNewClient({ ...newClient, name: e.target.value })}
+                    className="form-input"
+                    placeholder="Acme Corp"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Contact Person *</label>
+                  <input
+                    type="text"
+                    value={newClient.contactPerson}
+                    onChange={(e) => setNewClient({ ...newClient, contactPerson: e.target.value })}
+                    className="form-input"
+                    placeholder="Jane Doe"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Phone Number *</label>
+                  <input
+                    type="tel"
+                    value={newClient.phone}
+                    onChange={(e) => setNewClient({ ...newClient, phone: e.target.value })}
+                    className="form-input"
+                    placeholder="+1 555-1000"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Email Address</label>
+                  <input
+                    type="email"
+                    value={newClient.email}
+                    onChange={(e) => setNewClient({ ...newClient, email: e.target.value })}
+                    className="form-input"
+                    placeholder="contact@company.com"
+                  />
+                </div>
 
-              <button
-                onClick={addCandidate}
-                className="btn btn-primary"
-              >
-                <Plus style={{ width: '1.25rem', height: '1.25rem' }} />
-                Add Candidate
-              </button>
-            </div>
+                <button
+                  onClick={addClient}
+                  className="btn btn-primary"
+                >
+                  <Plus style={{ width: '1.25rem', height: '1.25rem' }} />
+                  Add Client
+                </button>
+              </div>
+            ) : (
+              <div>
+                <div className="form-group">
+                  <label className="form-label">Full Name *</label>
+                  <input
+                    type="text"
+                    value={newCandidate.name}
+                    onChange={(e) => setNewCandidate({ ...newCandidate, name: e.target.value })}
+                    className="form-input"
+                    placeholder="John Doe"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Phone Number *</label>
+                  <input
+                    type="tel"
+                    value={newCandidate.phone}
+                    onChange={(e) => setNewCandidate({ ...newCandidate, phone: e.target.value })}
+                    className="form-input"
+                    placeholder="+1 555-0100"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Email Address</label>
+                  <input
+                    type="email"
+                    value={newCandidate.email}
+                    onChange={(e) => setNewCandidate({ ...newCandidate, email: e.target.value })}
+                    className="form-input"
+                    placeholder="john@email.com"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Interview Questions</label>
+                  <textarea
+                    value={newCandidate.questions}
+                    onChange={(e) => setNewCandidate({ ...newCandidate, questions: e.target.value })}
+                    className="form-input"
+                    placeholder="Tell me about your experience with..."
+                  />
+                </div>
+
+                <button
+                  onClick={addCandidate}
+                  className="btn btn-primary"
+                >
+                  <Plus style={{ width: '1.25rem', height: '1.25rem' }} />
+                  Add Candidate
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -573,7 +733,7 @@ function App() {
           <div className="modal">
             <div className="modal-header">
               <h2 className="modal-title">API Settings</h2>
-              <button 
+              <button
                 onClick={() => setShowSettings(false)}
                 className="modal-close"
               >
@@ -585,7 +745,7 @@ function App() {
               <h3 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>Asterisk Settings</h3>
               <div className="form-group">
                 <label className="form-label">Asterisk Host IP</label>
-                <input 
+                <input
                   type="text"
                   value={apiKeys.asteriskHost}
                   onChange={(e) => setApiKeys({ ...apiKeys, asteriskHost: e.target.value })}
@@ -595,7 +755,7 @@ function App() {
               </div>
               <div className="form-group">
                 <label className="form-label">Asterisk AMI Port</label>
-                <input 
+                <input
                   type="text"
                   value={apiKeys.asteriskPort}
                   onChange={(e) => setApiKeys({ ...apiKeys, asteriskPort: e.target.value })}
@@ -605,7 +765,7 @@ function App() {
               </div>
               <div className="form-group">
                 <label className="form-label">AMI Username</label>
-                <input 
+                <input
                   type="text"
                   value={apiKeys.asteriskUser}
                   onChange={(e) => setApiKeys({ ...apiKeys, asteriskUser: e.target.value })}
@@ -615,7 +775,7 @@ function App() {
               </div>
               <div className="form-group">
                 <label className="form-label">AMI Secret</label>
-                <input 
+                <input
                   type="password"
                   value={apiKeys.asteriskSecret}
                   onChange={(e) => setApiKeys({ ...apiKeys, asteriskSecret: e.target.value })}
@@ -625,7 +785,7 @@ function App() {
               </div>
               <div className="form-group">
                 <label className="form-label">SIP Context</label>
-                <input 
+                <input
                   type="text"
                   value={apiKeys.asteriskContext}
                   onChange={(e) => setApiKeys({ ...apiKeys, asteriskContext: e.target.value })}
@@ -635,7 +795,7 @@ function App() {
               </div>
               <div className="form-group">
                 <label className="form-label">Outbound Channel</label>
-                <input 
+                <input
                   type="text"
                   value={apiKeys.asteriskOutboundChannel}
                   onChange={(e) => setApiKeys({ ...apiKeys, asteriskOutboundChannel: e.target.value })}
@@ -646,7 +806,7 @@ function App() {
               <h3 style={{ marginBottom: '1rem', marginTop: '1.5rem', color: 'var(--text-primary)' }}>AI Settings</h3>
               <div className="form-group">
                 <label className="form-label">OpenAI API Key</label>
-                <input 
+                <input
                   type="password"
                   value={apiKeys.openaiKey}
                   onChange={(e) => setApiKeys({ ...apiKeys, openaiKey: e.target.value })}

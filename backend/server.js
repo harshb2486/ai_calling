@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import candidatesRouter from './routes/candidates.js';
 import settingsRouter from './routes/settings.js';
 import callsRouter from './routes/calls.js';
+import clientsRouter from './routes/clients.js';
 
 dotenv.config();
 
@@ -17,6 +18,7 @@ app.use(express.json());
 app.use('/api/candidates', candidatesRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/calls', callsRouter);
+app.use('/api/clients', clientsRouter);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
