@@ -274,7 +274,7 @@ function App() {
               <p>Automated Candidate Screening</p>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div className="header-actions">
             <div className="api-status">
               <Activity style={{ width: '1rem', height: '1rem' }} />
               <span>API Connected</span>

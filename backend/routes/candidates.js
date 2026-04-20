@@ -1,5 +1,12 @@
 import express from 'express';
-import { getCandidates, getCandidateById, createCandidate, updateCandidate, deleteCandidate } from '../data/store.js';
+import {
+  getCandidates,
+  getCandidateById,
+  createCandidate,
+  updateCandidate,
+  deleteCandidate,
+  importLeads
+} from '../data/store.js';
 
 const router = express.Router();
 
@@ -26,13 +33,47 @@ router.get('/:id', (req, res) => {
 
 router.post('/', (req, res) => {
   try {
-    const { name, phone, email, questions } = req.body;
-    if (!name || !phone) {
-      return res.status(400).json({ error: 'Name and phone are required' });
+    const {
+      name,
+      phone,
+      email,
+      company,
+      interest,
+      customFields,
+      questions
+    } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone is required' });
     }
     
-    const candidate = createCandidate({ name, phone, email, questions });
+    const candidate = createCandidate({
+      name,
+      phone,
+      email,
+      company,
+      interest,
+      customFields,
+      questions
+    });
     res.status(201).json(candidate);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/import', (req, res) => {
+  try {
+    const { leads } = req.body;
+    if (!Array.isArray(leads)) {
+      return res.status(400).json({ error: 'leads must be an array' });
+    }
+
+    const imported = importLeads(leads);
+    res.status(201).json({
+      importedCount: imported.length,
+      leads: imported
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -40,8 +81,44 @@ router.post('/', (req, res) => {
 
 router.put('/:id', (req, res) => {
   try {
-    const { name, phone, email, questions, status, score } = req.body;
-    const candidate = updateCandidate(req.params.id, { name, phone, email, questions, status, score });
+    const {
+      name,
+      phone,
+      email,
+      company,
+      interest,
+      customFields,
+      questions,
+      status,
+      score,
+      notes,
+      callbackAt,
+      retryCount,
+      conversationStage,
+      lastIntent,
+      lastAction,
+      language
+    } = req.body;
+
+    const candidate = updateCandidate(req.params.id, {
+      name,
+      phone,
+      email,
+      company,
+      interest,
+      customFields,
+      questions,
+      status,
+      score,
+      notes,
+      callbackAt,
+      retryCount,
+      conversationStage,
+      lastIntent,
+      lastAction,
+      language
+    });
+
     if (!candidate) {
       return res.status(404).json({ error: 'Candidate not found' });
     }
